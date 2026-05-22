@@ -165,6 +165,8 @@ class PlantaoExtractor:
 
         self._log_week_range(current_row, next_row)
 
+        # Regra de negócio: o plantão do sábado/domingo já é da
+        # rotação da próxima semana (linha seguinte na planilha).
         return Plantonistas(
             squad_lead=self._cell(current_row, COL_SQUAD_LEAD),
             cloud=self._cell(current_row, COL_CLOUD),
@@ -186,8 +188,8 @@ class PlantaoExtractor:
 
     def _log_week_range(self, current_row: List[str], next_row: List[str]) -> None:
         """
-        Loga os dias (C..I) da semana corrente e o sábado que ser\u00e1
-        considerado (próxima linha). Emite WARNING se a estrutura n\u00e3o
+        Loga os dias (C..I) da semana corrente e da próxima linha
+        (de onde sai o sábado). Emite WARNING se a estrutura não
         parecer Seg..Dom em 7 colunas.
         """
         cur_days = [self._parse_day(self._cell(current_row, c))
@@ -206,22 +208,9 @@ class PlantaoExtractor:
                 len(filled),
             )
 
-        # Sábado deve vir da próxima semana (linha + 1), primeira coluna preenchida
         if next_row:
             nxt_str = " ".join(f"{d:02d}" if d else "--" for d in nxt_days)
-            logger.info("Pr\u00f3xima semana (sábado virá daqui): %s", nxt_str)
-            first_next = next((d for d in nxt_days if d is not None), None)
-            last_cur = next((d for d in reversed(cur_days) if d is not None), None)
-            if first_next is not None and last_cur is not None:
-                # Em uma estrutura Seg..Dom, last_cur (domingo) + 1 == first_next (segunda)
-                # Aceitamos virada de mês ignorando a checagem nesse caso.
-                if first_next != last_cur + 1 and first_next != 1:
-                    logger.warning(
-                        "Salto inesperado entre semanas: \u00faltimo dia da semana "
-                        "atual=%s e primeiro da pr\u00f3xima=%s. Confira o layout "
-                        "da planilha (esperado Seg..Dom cont\u00edguo).",
-                        last_cur, first_next,
-                    )
+            logger.info("Próxima semana (sábado virá daqui): %s", nxt_str)
         else:
             logger.warning(
                 "Não há próxima linha após a semana atual; "
@@ -237,11 +226,19 @@ class PlantaoExtractor:
         `get_all_values()` retorna o nome do mês apenas na primeira linha
         do bloco e vazio nas demais. Mantemos um "contexto de mês atual"
         que só é atualizado quando a célula B vem preenchida.
+
+        Como a planilha não contém o ano (e o mesmo nome de mês pode
+        aparecer várias vezes para anos diferentes), desambiguamos
+        exigindo que a posição do dia (offset 0..6 nas colunas C..I,
+        onde C=segunda e I=domingo) corresponda ao dia da semana real
+        de hoje. Isso identifica unicamente o ano correto.
         """
         target_day = self._today.day
         target_month_name = MONTH_NAMES_PT[self._today.month]
+        target_weekday = self._today.weekday()  # 0=Seg ... 6=Dom
         start_idx = DATA_START_ROW - 1  # 0-based
         current_month_matches = False
+        fallback_row: Optional[int] = None
 
         for row_idx in range(start_idx, len(all_values)):
             row = all_values[row_idx]
@@ -260,12 +257,30 @@ class PlantaoExtractor:
             for col_1based in range(DAYS_COL_START, DAYS_COL_END + 1):
                 value = self._cell(row, col_1based)
                 day = self._parse_day(value)
-                if day == target_day:
+                if day != target_day:
+                    continue
+                offset = col_1based - DAYS_COL_START  # 0=Seg ... 6=Dom
+                if offset == target_weekday:
                     logger.debug(
-                        "Match: linha=%d coluna=%d valor='%s'",
+                        "Match (weekday OK): linha=%d coluna=%d valor='%s'",
                         row_idx + 1, col_1based, value,
                     )
                     return row_idx
+                logger.debug(
+                    "Linha %d tem o dia %d na coluna %d (offset=%d), mas o "
+                    "weekday não bate com hoje (%d). Provavelmente é outro ano.",
+                    row_idx + 1, target_day, col_1based, offset, target_weekday,
+                )
+                if fallback_row is None:
+                    fallback_row = row_idx
+
+        if fallback_row is not None:
+            logger.warning(
+                "Nenhuma linha com weekday alinhado para %s. Usando primeiro "
+                "match por dia/mês (linha %d) como fallback — pode ser ano errado.",
+                self._today.isoformat(), fallback_row + 1,
+            )
+            return fallback_row
         return None
 
     @staticmethod
@@ -322,7 +337,6 @@ class ChatNotifier:
 # ---------------------------------------------------------------------------
 def format_message(p: Plantonistas) -> str:
     return (
-        "-------\n"
         "💙 Plantão da Semana 💙\n"
         "\n"
         f"SL:  {p.squad_lead}\n"
@@ -336,7 +350,6 @@ def format_message(p: Plantonistas) -> str:
         f"Cloud:   {p.cloud_sabado}\n"
         f"Onprem:  {p.onprem_sabado}\n"
         f"Dados:  {p.dados_sabado}\n"
-        "------"
     )
 
 
