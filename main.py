@@ -339,17 +339,17 @@ def format_message(p: Plantonistas) -> str:
     return (
         "💙 Plantão da Semana 💙\n"
         "\n"
-        f"SL:  {p.squad_lead}\n"
-        f"Cloud: {p.cloud}\n"
-        f"Onprem: {p.onprem}\n"
-        f"Dados:  {p.dados}\n"
-        f"TL iPET:   {p.tl}\n"
+        f"*SL*:  @{p.squad_lead}\n"
+        f"*Cloud*: @{p.cloud}\n"
+        f"*Onprem*: @{p.onprem}\n"
+        f"*Dados*: @{p.dados}\n"
+        f"*TL iPET*: @{p.tl}\n"
         "\n"
-        "💙 Plantão do sábado:\n"
+        "💙 Plantão do sábado 💙\n"
         "\n"
-        f"Cloud:   {p.cloud_sabado}\n"
-        f"Onprem:  {p.onprem_sabado}\n"
-        f"Dados:  {p.dados_sabado}\n"
+        f"*Cloud*: @{p.cloud_sabado}\n"
+        f"*Onprem*: @{p.onprem_sabado}\n"
+        f"*Dados*: @{p.dados_sabado}\n"
     )
 
 
