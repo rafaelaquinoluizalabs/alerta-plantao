@@ -129,17 +129,17 @@ Os dados começam na **linha 4** (linha 3 é cabeçalho).
 -------
 💙 Plantão da Semana 💙
 
-SL:  {squad_lead}
-Cloud: {cloud}
-Onprem: {onprem}
-Dados:  {dados}
-TL iPET:   {tl}
+SL: @{squad_lead}
+Cloud: @{cloud}
+Onprem: @{onprem}
+Dados: @{dados}
+TL iPET: @{tl}
 
-💙 Plantão do sábado:
+💙 Plantão do sábado 💙
 
-Cloud:   {cloud_proxima_semana}
-Onprem:  {onprem_proxima_semana}
-Dados:  {dados_proxima_semana}
+Cloud: @{cloud_proxima_semana}
+Onprem: @{onprem_proxima_semana}
+Dados: @{dados_proxima_semana}
 ------
 ```
 
