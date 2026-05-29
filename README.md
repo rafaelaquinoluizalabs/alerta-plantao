@@ -134,12 +134,12 @@ Os dados começam na **linha 4** (linha 3 é cabeçalho).
 
 SL: <users/123456789012345678901>
 Cloud: <users/987654321098765432109>
-Onprem: @NomeNaoMapeado
+Onprem: NomeNaoMapeado
 ...
 ------
 ```
 
-O Google Chat renderiza `<users/USER_ID>` como uma menção real (`@Fulano`) e **notifica** o usuário. Nomes que não estiverem no `mentions.json` caem em fallback de texto (`@Nome`) e geram WARNING no log.
+O Google Chat renderiza `<users/USER_ID>` como uma menção real (`@Fulano`) e **notifica** o usuário. Nomes que não estiverem no `mentions.json` são exibidos exatamente como estão na planilha, **sem menção** (e geram WARNING no log).
 
 ## 5. Menções reais no Google Chat (`mentions.json`)
 
@@ -175,6 +175,31 @@ O `USER_ID` é o **ID numérico** do usuário no Google Workspace (não o e-mail
 4. **Admin SDK Directory API**: `GET https://admin.googleapis.com/admin/directory/v1/users/<email>` → campo `id`.
 
 > ⚠️ A menção só **notifica** se o usuário for **membro do espaço** onde o webhook publica. Caso contrário, o Chat ainda renderiza o nome, mas sem disparar notificação.
+
+### Gerar o `mentions.json` automaticamente (Directory API)
+
+Se você tem uma **Service Account com domain-wide delegation**, use o script
+[`tools/build_mentions.py`](tools/build_mentions.py) para resolver e-mails em
+USER_IDs em lote, a partir de um CSV `Nome,Email`:
+
+```bash
+# 1. Habilite no Admin Console (Security → API Controls → Domain-wide Delegation)
+#    o Client ID da SA com o escopo:
+#    https://www.googleapis.com/auth/admin.directory.user.readonly
+#
+# 2. No .env, defina ADMIN_EMAIL (admin do Workspace a ser impersonado).
+#
+# 3. Monte um CSV (veja tools/equipe.example.csv):
+#    Nome,Email
+#    João Silva,joao.silva@empresa.com
+#
+# 4. Rode:
+python tools/build_mentions.py --csv equipe.csv            # grava mentions.json
+python tools/build_mentions.py --csv equipe.csv --dry-run  # só imprime
+```
+
+A coluna **Nome** vira a chave do `mentions.json` (deve bater com o nome na
+planilha); o **Email** é usado apenas para resolver o ID.
 
 ## 6. Troubleshooting
 

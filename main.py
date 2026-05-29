@@ -403,15 +403,17 @@ class MentionResolver:
         # Sem mapa carregado: devolve o nome puro (comportamento legado).
         if not self._mapping_available:
             return name
-        # Com mapa carregado mas nome ausente: mantém '@Nome' + WARNING único
-        # para sinalizar que faltou cadastrar o USER_ID.
+        # Com mapa carregado mas nome ausente: exibe o nome exatamente como
+        # está na planilha (sem mencionar) e emite WARNING único para
+        # sinalizar que faltou cadastrar o USER_ID.
         if name not in self._warned:
             logger.warning(
-                "Nome '%s' não encontrado no mapa de menções; usando texto puro.",
+                "Nome '%s' não encontrado no mapa de menções; "
+                "exibindo o nome sem mencionar.",
                 name,
             )
             self._warned.add(name)
-        return f"@{name}"
+        return name
 
     @staticmethod
     def _normalize(s: str) -> str:
