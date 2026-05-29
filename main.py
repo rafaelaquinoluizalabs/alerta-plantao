@@ -9,12 +9,14 @@ plantonistas e a publica em um Incoming Webhook do Google Chat.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import gspread
 import requests
@@ -69,6 +71,7 @@ class Settings:
     spreadsheet_id: str
     credentials_path: str
     sheet_tab_name: str
+    mentions_path: str
 
     @classmethod
     def from_env(cls, require_webhook: bool = True) -> "Settings":
@@ -94,6 +97,7 @@ class Settings:
             spreadsheet_id=spreadsheet_id,
             credentials_path=credentials_path,
             sheet_tab_name=os.getenv("SHEET_TAB_NAME", "HOJE"),
+            mentions_path=os.getenv("MENTIONS_PATH", "mentions.json"),
         )
 
 
@@ -333,23 +337,108 @@ class ChatNotifier:
 
 
 # ---------------------------------------------------------------------------
+# Resolução de menções (@) no Google Chat
+# ---------------------------------------------------------------------------
+class MentionResolver:
+    """
+    Resolve um nome (como aparece na planilha) para a sintaxe de menção
+    aceita pelo Google Chat via Incoming Webhook: ``<users/USER_ID>``.
+
+    Se o nome não existir no mapa, retorna ``@{nome}`` como fallback de texto
+    e emite WARNING (uma vez por nome por execução).
+    """
+
+    def __init__(
+        self,
+        mapping: Optional[Dict[str, str]] = None,
+        *,
+        mapping_available: bool = True,
+    ):
+        self._raw_map: Dict[str, str] = dict(mapping or {})
+        # Mapa normalizado: chave canonicalizada -> USER_ID
+        self._norm_map: Dict[str, str] = {
+            self._normalize(k): v for k, v in self._raw_map.items() if k
+        }
+        # Quando False (ex.: mentions.json ausente), o fallback é o nome puro,
+        # sem o prefixo '@', para que a mensagem fique igual à planilha.
+        self._mapping_available = mapping_available
+        self._warned: set[str] = set()
+
+    @classmethod
+    def from_path(cls, path: str) -> "MentionResolver":
+        if not path or not os.path.isfile(path):
+            logger.warning(
+                "Arquivo de menções não encontrado em '%s'. "
+                "Mensagens usarão apenas o nome como está na planilha, "
+                "sem notificar os usuários.",
+                path,
+            )
+            return cls({}, mapping_available=False)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(
+                "Falha ao ler '%s' (%s). Mensagens usarão apenas o nome "
+                "como está na planilha.",
+                path, e,
+            )
+            return cls({}, mapping_available=False)
+        if not isinstance(data, dict):
+            logger.warning(
+                "Conteúdo de '%s' não é um objeto JSON. Ignorando.", path,
+            )
+            return cls({}, mapping_available=False)
+        # Garante que todos os valores sejam string
+        mapping = {str(k): str(v) for k, v in data.items()}
+        logger.info("Carregadas %d menções de '%s'.", len(mapping), path)
+        return cls(mapping, mapping_available=True)
+
+    def resolve(self, name: str) -> str:
+        if not name:
+            return ""
+        user_id = self._norm_map.get(self._normalize(name))
+        if user_id:
+            return f"<users/{user_id}>"
+        # Sem mapa carregado: devolve o nome puro (comportamento legado).
+        if not self._mapping_available:
+            return name
+        # Com mapa carregado mas nome ausente: mantém '@Nome' + WARNING único
+        # para sinalizar que faltou cadastrar o USER_ID.
+        if name not in self._warned:
+            logger.warning(
+                "Nome '%s' não encontrado no mapa de menções; usando texto puro.",
+                name,
+            )
+            self._warned.add(name)
+        return f"@{name}"
+
+    @staticmethod
+    def _normalize(s: str) -> str:
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+        return " ".join(s.split()).casefold()
+
+
+# ---------------------------------------------------------------------------
 # Formatação
 # ---------------------------------------------------------------------------
-def format_message(p: Plantonistas) -> str:
+def format_message(p: Plantonistas, resolver: MentionResolver) -> str:
+    r = resolver.resolve
     return (
         "💙 Plantão da Semana 💙\n"
         "\n"
-        f"*SL*:  @{p.squad_lead}\n"
-        f"*Cloud*: @{p.cloud}\n"
-        f"*Onprem*: @{p.onprem}\n"
-        f"*Dados*: @{p.dados}\n"
-        f"*TL iPET*: @{p.tl}\n"
+        f"*SL*:  {r(p.squad_lead)}\n"
+        f"*Cloud*: {r(p.cloud)}\n"
+        f"*Onprem*: {r(p.onprem)}\n"
+        f"*Dados*: {r(p.dados)}\n"
+        f"*TL iPET*: {r(p.tl)}\n"
         "\n"
         "💙 Plantão do sábado 💙\n"
         "\n"
-        f"*Cloud*: @{p.cloud_sabado}\n"
-        f"*Onprem*: @{p.onprem_sabado}\n"
-        f"*Dados*: @{p.dados_sabado}\n"
+        f"*Cloud*: {r(p.cloud_sabado)}\n"
+        f"*Onprem*: {r(p.onprem_sabado)}\n"
+        f"*Dados*: {r(p.dados_sabado)}\n"
     )
 
 
@@ -396,7 +485,8 @@ def run(argv: Optional[List[str]] = None) -> int:
         ).open_worksheet()
 
         plantonistas = PlantaoExtractor(worksheet, today=today_override).extract()
-        message = format_message(plantonistas)
+        resolver = MentionResolver.from_path(settings.mentions_path)
+        message = format_message(plantonistas, resolver)
         logger.info("Mensagem gerada:\n%s", message)
 
         if args.dry_run:

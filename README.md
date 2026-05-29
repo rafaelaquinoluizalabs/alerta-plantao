@@ -16,6 +16,8 @@ alerta-plantao/
 ├── requirements.txt
 ├── .env.example
 ├── .env             # (não versionado)
+├── mentions.example.json
+├── mentions.json    # (não versionado — contém USER_IDs reais)
 └── credentials.json # (não versionado)
 ```
 
@@ -98,6 +100,7 @@ Toda segunda às 09:00:
 | `SPREADSHEET_ID` | Sim | ID da planilha (já preenchido no `.env.example`). |
 | `CREDENTIALS_PATH` | Sim | Caminho para o JSON da Service Account. |
 | `SHEET_TAB_NAME` | Não | Nome da aba. Default: `HOJE`. |
+| `MENTIONS_PATH` | Não | Caminho para o JSON com o mapa `Nome → USER_ID`. Default: `mentions.json`. |
 
 ## 4. Regras de negócio e formato esperado da planilha
 
@@ -129,21 +132,51 @@ Os dados começam na **linha 4** (linha 3 é cabeçalho).
 -------
 💙 Plantão da Semana 💙
 
-SL: @{squad_lead}
-Cloud: @{cloud}
-Onprem: @{onprem}
-Dados: @{dados}
-TL iPET: @{tl}
-
-💙 Plantão do sábado 💙
-
-Cloud: @{cloud_proxima_semana}
-Onprem: @{onprem_proxima_semana}
-Dados: @{dados_proxima_semana}
+SL: <users/123456789012345678901>
+Cloud: <users/987654321098765432109>
+Onprem: @NomeNaoMapeado
+...
 ------
 ```
 
-## 5. Troubleshooting
+O Google Chat renderiza `<users/USER_ID>` como uma menção real (`@Fulano`) e **notifica** o usuário. Nomes que não estiverem no `mentions.json` caem em fallback de texto (`@Nome`) e geram WARNING no log.
+
+## 5. Menções reais no Google Chat (`mentions.json`)
+
+Para que os plantonistas sejam **realmente notificados** (sino, destaque), o webhook precisa enviar a sintaxe `<users/USER_ID>` no corpo da mensagem. Como a planilha só guarda o nome, o script usa um mapa `Nome → USER_ID`.
+
+### Exemplo de `mentions.json`
+
+```json
+{
+  "Fulano de Tal": "123456789012345678901",
+  "Beltrano da Silva": "987654321098765432109"
+}
+```
+
+A chave é o **nome exatamente como aparece na planilha**. A comparação é tolerante a acentos, capitalização e espaços extras (`"João"` casa com `"joao"`, `"JOÃO "`, etc.).
+
+Para mencionar **todos no espaço**, use o valor especial `all`:
+
+```json
+{ "Equipe": "all" }
+```
+
+> ⚠️ `mentions.json` está no `.gitignore` porque pode conter IDs internos. Use `mentions.example.json` como template versionado.
+
+### Como obter o `USER_ID`
+
+O `USER_ID` é o **ID numérico** do usuário no Google Workspace (não o e-mail). Algumas formas de obtê-lo:
+
+1. **Admin Console** (precisa ser admin):
+   `admin.google.com` → **Diretório → Usuários** → clique no usuário → o ID aparece nos detalhes (campo *Unique ID* / na URL `…/users/<ID>`).
+2. **Google Chat (desktop)**: passe o mouse / clique no avatar do usuário em uma conversa. Em alguns Workspaces aparece a opção **Copy member ID**.
+3. **People API** (`people.googleapis.com`): autenticando como o próprio usuário, chame `GET https://people.googleapis.com/v1/people/me?personFields=metadata`. O `resourceName` retorna como `people/<USER_ID>`.
+4. **Admin SDK Directory API**: `GET https://admin.googleapis.com/admin/directory/v1/users/<email>` → campo `id`.
+
+> ⚠️ A menção só **notifica** se o usuário for **membro do espaço** onde o webhook publica. Caso contrário, o Chat ainda renderiza o nome, mas sem disparar notificação.
+
+## 6. Troubleshooting
 
 | Sintoma | Causa provável | Solução |
 |---|---|---|
