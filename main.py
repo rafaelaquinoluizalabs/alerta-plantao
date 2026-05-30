@@ -9,13 +9,14 @@ plantonistas e a publica em um Incoming Webhook do Google Chat.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
 import sys
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import gspread
@@ -47,6 +48,12 @@ COL_ONPREM = 12         # L
 COL_DADOS = 13          # M
 COL_SQUAD_LEAD = 16     # P
 COL_TL = 17             # Q
+
+# Janela (em horas) na qual uma mensagem idêntica não é reenviada,
+# evitando duplicações por execuções repetidas / retries / agendadores.
+DEDUP_WINDOW_HOURS = 12
+# Arquivo de estado que guarda o hash e o horário do último envio.
+STATE_FILE = ".last_sent.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
@@ -461,6 +468,12 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         metavar="YYYY-MM-DD",
         help="Sobrescreve a data atual (útil para testar semanas específicas).",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Envia mesmo que uma mensagem idêntica já tenha sido enviada "
+             "recentemente (ignora a proteção anti-duplicação).",
+    )
     return parser.parse_args(argv)
 
 
@@ -473,6 +486,51 @@ def _resolve_today(value: Optional[str]) -> Optional[date]:
         raise ValueError(
             f"Valor inválido para --today: {value!r} (esperado YYYY-MM-DD)"
         ) from e
+
+
+def _message_hash(message: str) -> str:
+    return hashlib.sha256(message.encode("utf-8")).hexdigest()
+
+
+def _already_sent_recently(message: str, window_hours: int = DEDUP_WINDOW_HOURS) -> bool:
+    """
+    Retorna True se uma mensagem idêntica já foi enviada dentro da janela,
+    evitando duplicações. Lê o arquivo de estado STATE_FILE.
+    """
+    if not os.path.isfile(STATE_FILE):
+        return False
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        last_hash = state.get("hash")
+        last_ts = datetime.fromisoformat(state["timestamp"])
+    except (json.JSONDecodeError, OSError, KeyError, ValueError) as e:
+        logger.warning("Não foi possível ler %s (%s). Ignorando dedupe.", STATE_FILE, e)
+        return False
+
+    if last_hash != _message_hash(message):
+        return False
+    elapsed = datetime.now(timezone.utc) - last_ts
+    if elapsed < timedelta(hours=window_hours):
+        logger.warning(
+            "Mensagem idêntica já enviada há %s (< %dh). Pulando envio para "
+            "evitar duplicação. Use --force para enviar mesmo assim.",
+            elapsed, window_hours,
+        )
+        return True
+    return False
+
+
+def _record_sent(message: str) -> None:
+    state = {
+        "hash": _message_hash(message),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+    except OSError as e:
+        logger.warning("Não foi possível gravar %s (%s).", STATE_FILE, e)
 
 
 def run(argv: Optional[List[str]] = None) -> int:
@@ -498,7 +556,11 @@ def run(argv: Optional[List[str]] = None) -> int:
             print("===== FIM DO PREVIEW =====\n")
             return 0
 
+        if not args.force and _already_sent_recently(message):
+            return 0
+
         ChatNotifier(settings.webhook_url).send(message)
+        _record_sent(message)
         return 0
 
     except EnvironmentError as e:

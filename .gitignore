@@ -1,6 +1,8 @@
 .env
 credentials.json
 mentions.json
+.last_sent.json
+eu.csv
 __pycache__/
 *.pyc
 .venv/
