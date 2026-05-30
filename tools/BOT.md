@@ -125,6 +125,24 @@ Endpoints expostos:
 | `GET`  | `/health` | Health check (`{"status":"ok"}`).                    |
 | `POST` | `/`       | Recebe os eventos do Google Chat.                    |
 
+### Respostas do bot por tipo de evento
+
+O bot trata os eventos enviados pelo Google Chat assim:
+
+| `type`               | Ação                                                                 | Resposta ao usuário                                                    |
+| -------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `ADDED_TO_SPACE`     | Saudação inicial (nada é gravado ainda).                             | "👋 Olá! Me envie qualquer mensagem que eu capturo seu USER_ID…"      |
+| `MESSAGE`            | Extrai e grava `displayName` + `USER_ID` em `mentions-bot.json`.     | "Pronto, **Nome**! Seu USER_ID foi registrado ✅ \\n `USER_ID`"        |
+| `REMOVED_FROM_SPACE` | Nada (responde `200` vazio).                                         | —                                                                     |
+| outro                | Pede para mandar uma mensagem.                                       | "Pode me mandar uma mensagem que eu capturo seu ID. 🙂"               |
+
+Observações:
+- Mensagens vindas de **outros bots** (`sender.type == "BOT"`) são ignoradas.
+- Se o evento não trouxer `sender.name` no formato `users/...`, o bot responde
+  "Não consegui identificar seu USER_ID. 🤔" e nada é gravado.
+- Reenvios da mesma pessoa apenas confirmam ("já estava registrado ✅") sem
+  duplicar a entrada.
+
 ---
 
 ## 5. Expondo o bot na internet

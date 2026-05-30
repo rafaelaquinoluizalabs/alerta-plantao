@@ -164,7 +164,7 @@ def on_event():
 
     if event_type == "ADDED_TO_SPACE":
         return jsonify(
-            text="👋 Olá! Me envie qualquer mensagem (ou /id) que eu capturo seu "
+            text="👋 Olá! Me envie qualquer mensagem que eu capturo seu "
                  "USER_ID para o alerta de plantão."
         )
 

@@ -2,6 +2,7 @@
 credentials.json
 mentions.json
 mentions-bot.json
+mentions-web.json
 .last_sent.json
 eu.csv
 __pycache__/
