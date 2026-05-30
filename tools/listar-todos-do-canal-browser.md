@@ -2,6 +2,7 @@ abrir a tela de membros do crupo no gchat, deixar a tela no topo, abrir o consol
 
 ps: rola a pagina de vagar ate o fim para capturar os membros, ao terminar de rolar digite: "parar()" e ENTER
 
+```javascript
 console.clear();
 console.log("🟢 MODO DE CAPTURA JSON ATIVADO (RADAR) 🟢");
 console.log("1. Vá para a janela de membros do chat.");
@@ -59,3 +60,4 @@ window.parar = function() {
     
     console.log("\n✅ Fim da extração! O código JSON gerado acima está pronto para copiar.");
 };
+```
