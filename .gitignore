@@ -1,6 +1,5 @@
-.env
+env
 credentials.json
-mentions.json
 mentions-bot.json
 mentions-web.json
 .last_sent.json
