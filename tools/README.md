@@ -3,6 +3,9 @@
 Resolve **e-mails → USER_IDs** do Google Workspace (via Admin SDK Directory API)
 e gera o `mentions.json` usado pelo `main.py` para mencionar pessoas no Google Chat.
 
+> **Alternativa sem Admin SDK:** o **bot** `tools/bot.py` captura o USER_ID de
+> quem manda mensagem para ele. Veja [BOT.md](BOT.md).
+
 ## Pré-requisitos
 
 1. **Service Account com domain-wide delegation** habilitada.

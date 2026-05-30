@@ -2,3 +2,6 @@ gspread>=5.12
 google-auth>=2.29.0
 requests>=2.31.0
 python-dotenv>=1.0.0
+
+# Apenas para o bot de captura de IDs (tools/bot.py)
+flask>=3.0.0
