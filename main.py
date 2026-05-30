@@ -456,6 +456,7 @@ def format_message(p: Plantonistas, resolver: MentionResolver) -> str:
         f"*Cloud*: {r(p.cloud_sabado)}\n"
         f"*Onprem*: {r(p.onprem_sabado)}\n"
         f"*Dados*: {r(p.dados_sabado)}\n"
+        "\n\nBoa semana pessoal. Bora pra cima. 🚀🚀🚀"
     )
 
 
