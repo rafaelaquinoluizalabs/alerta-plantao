@@ -191,10 +191,18 @@ class PlantaoExtractor:
 
     # -------- Helpers --------
     @staticmethod
-    def _cell(row: List[str], col_1based: int) -> str:
+    def _remove_parens(text: str) -> str:
+        """Remove tudo entre parênteses (inclusive) e espaços antes/depois."""
+        import re
+        # Remove tudo entre parênteses, inclusive parênteses e espaços antes
+        return re.sub(r"\s*\([^)]*\)", "", text).strip()
+
+    @classmethod
+    def _cell(cls, row: List[str], col_1based: int) -> str:
         idx = col_1based - 1
         if 0 <= idx < len(row):
-            return row[idx].strip()
+            val = row[idx].strip()
+            return cls._remove_parens(val)
         return ""
 
     def _log_week_range(self, current_row: List[str], next_row: List[str]) -> None:
