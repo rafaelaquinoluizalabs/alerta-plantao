@@ -1,22 +1,97 @@
-COMPETENCIAS = ["team1", "team2"]  # Substitua pelos nomes reais dos times
+"""
+Ferramenta de apoio para inspecionar (e futuramente ajustar) os plantonistas
+no VictorOps / Splunk On-Call por competência.
 
+Boas práticas aplicadas:
+- Não desativa verificação TLS (sem ``verify=False``).
+- Todas as chamadas HTTP usam timeout.
+- Times do VictorOps são configuráveis por variável de ambiente.
+- Erros de rede são tratados de forma específica.
+"""
 
-import os
+from __future__ import annotations
+
 import argparse
+import logging
+import os
+from typing import Dict, List, Optional
+
+import requests
+from dotenv import load_dotenv
+
+try:
+    # Quando executado como módulo (python -m tools.ajustar_plantonistas)
+    from .planilha_map import COMPETENCIA_PLANILHA_MAP
+except ImportError:
+    # Quando executado como script (python tools/ajustar_plantonistas.py)
+    from planilha_map import COMPETENCIA_PLANILHA_MAP
+
 
 API_BASE = "https://api.victorops.com/api-public/v1"
+HTTP_TIMEOUT = 15  # segundos
 
-def get_env_vars():
-    from dotenv import load_dotenv
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("ajustar-plantonistas")
+
+
+def get_tls_verify() -> bool | str:
+    """
+    Resolve a verificação TLS de forma segura por padrão.
+
+    - ``VICTOROPS_CA_BUNDLE``: caminho para um bundle de CA corporativa
+      (recomendado em redes com proxy/certificado interno).
+    - ``VICTOROPS_INSECURE=true``: desativa a verificação TLS (NÃO recomendado;
+      use apenas conscientemente em ambientes controlados).
+    """
+    ca_bundle = os.getenv("VICTOROPS_CA_BUNDLE", "").strip()
+    if ca_bundle:
+        return ca_bundle
+    if os.getenv("VICTOROPS_INSECURE", "").strip().lower() in {"1", "true", "yes"}:
+        logger.warning(
+            "Verificação TLS DESATIVADA (VICTOROPS_INSECURE). Use apenas em "
+            "ambientes controlados; prefira VICTOROPS_CA_BUNDLE."
+        )
+        try:
+            from urllib3.exceptions import InsecureRequestWarning
+
+            requests.packages.urllib3.disable_warnings(InsecureRequestWarning)  # type: ignore[attr-defined]
+        except Exception:  # pragma: no cover - best effort
+            pass
+        return False
+    return True
+
+
+def get_teams() -> List[str]:
+    """
+    Times (slugs) do VictorOps a consultar.
+
+    Por padrão usa as chaves do mapa de competências da planilha; pode ser
+    sobrescrito pela variável de ambiente ``VICTOROPS_TEAMS`` (separada por
+    vírgulas).
+    """
+    raw = os.getenv("VICTOROPS_TEAMS", "")
+    if raw.strip():
+        return [t.strip() for t in raw.split(",") if t.strip()]
+    return list(COMPETENCIA_PLANILHA_MAP.keys())
+
+
+def get_env_vars() -> tuple[str, str, str]:
     load_dotenv()
     api_id = os.getenv("VICTOROPS_API_ID")
     api_key = os.getenv("VICTOROPS_API_KEY")
     org_id = os.getenv("VICTOROPS_ORG_ID")
     if not all([api_id, api_key, org_id]):
-        raise Exception("Faltam variáveis de ambiente VICTOROPS_API_ID, VICTOROPS_API_KEY ou VICTOROPS_ORG_ID")
+        raise EnvironmentError(
+            "Faltam variáveis de ambiente VICTOROPS_API_ID, "
+            "VICTOROPS_API_KEY ou VICTOROPS_ORG_ID"
+        )
     return api_id, api_key, org_id
 
-def get_headers(api_id, api_key, org_id):
+
+def get_headers(api_id: str, api_key: str, org_id: str) -> Dict[str, str]:
     return {
         "X-VO-Api-Id": api_id,
         "X-VO-Api-Key": api_key,
@@ -26,140 +101,86 @@ def get_headers(api_id, api_key, org_id):
     }
 
 
-# Lista todos os usuários da organização
-def get_users(api_id, api_key, org_id):
+def get_users(api_id: str, api_key: str, org_id: str) -> List[dict]:
+    """Lista todos os usuários da organização."""
     url = f"{API_BASE}/user"
-    import requests
-    resp = requests.get(url, headers=get_headers(api_id, api_key, org_id), verify=False)
+    resp = requests.get(
+        url,
+        headers=get_headers(api_id, api_key, org_id),
+        timeout=HTTP_TIMEOUT,
+        verify=get_tls_verify(),
+    )
     resp.raise_for_status()
     return resp.json().get("users", [])
 
-# Busca escala de plantão de um time
-def get_team_oncall_schedule(api_id, api_key, org_id, team):
+
+def get_team_oncall_schedule(
+    api_id: str, api_key: str, org_id: str, team: str
+) -> dict:
+    """Busca a escala de plantão (on-call) de um time."""
     url = f"{API_BASE}/team/{team}/oncall/schedule"
-    import requests
-    resp = requests.get(url, headers=get_headers(api_id, api_key, org_id), verify=False)
+    resp = requests.get(
+        url,
+        headers=get_headers(api_id, api_key, org_id),
+        timeout=HTTP_TIMEOUT,
+        verify=get_tls_verify(),
+    )
     resp.raise_for_status()
     return resp.json()
 
 
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Inspeciona (e futuramente ajusta) plantonistas VictorOps por competência."
+    )
+    parser.add_argument(
+        "--ajustar",
+        action="store_true",
+        help="Ajusta automaticamente o VictorOps para refletir a planilha.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simula o ajuste sem alterar o VictorOps (Splunk).",
+    )
+    return parser.parse_args(argv)
 
-def main():
-    parser = argparse.ArgumentParser(description="Ajusta e exibe plantonistas VictorOps por competência.")
-    parser.add_argument("--ajustar", action="store_true", help="Ajusta automaticamente o VictorOps para refletir a planilha")
-    parser.add_argument("--dry-run", action="store_true", help="Simula o ajuste sem alterar o VictorOps (Splunk)")
-    args = parser.parse_args()
 
-    api_id, api_key, org_id = get_env_vars()
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(argv)
 
-    # spreadsheet_id, credentials_path = get_planilha_env()
-
-    # Exemplo: listar usuários
-    print("Usuários VictorOps:")
     try:
-        users = get_users(api_id, api_key, org_id)
-        for user in users:
-            # Se user for dict, imprime username, senão imprime o valor direto
-            if isinstance(user, dict):
-                print(f"- {user.get('username', user)}")
-            else:
-                print(f"- {user}")
-    except Exception as e:
-        print(f"[ERRO] Não foi possível listar usuários: {e}")
+        api_id, api_key, org_id = get_env_vars()
+    except EnvironmentError as e:
+        logger.error("%s", e)
+        return 1
 
-    # Exemplo: buscar escala de plantão de cada time
-    for team in COMPETENCIAS:
-        print(f"\n=== {team} ===")
+    logger.info("Usuários VictorOps:")
+    try:
+        for user in get_users(api_id, api_key, org_id):
+            username = user.get("username", user) if isinstance(user, dict) else user
+            logger.info("- %s", username)
+    except requests.RequestException as e:
+        logger.error("Não foi possível listar usuários: %s", e)
+
+    for team in get_teams():
+        logger.info("=== %s ===", team)
         try:
             schedule = get_team_oncall_schedule(api_id, api_key, org_id, team)
-            print(schedule)
-        except Exception as e:
-            print(f"  [VictorOps] Falha ao buscar escala do time '{team}': {e}")
+            logger.info("%s", schedule)
+        except requests.RequestException as e:
+            logger.error("Falha ao buscar escala do time '%s': %s", team, e)
+
+    if args.ajustar and not args.dry_run:
+        logger.warning(
+            "Ajuste automático ainda não implementado: nenhuma alteração foi "
+            "feita no VictorOps."
+        )
+    elif args.ajustar and args.dry_run:
+        logger.info("[dry-run] Nenhuma alteração seria aplicada ao VictorOps.")
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
-
-API_BASE = "https://api.victorops.com/api-public/v1"
-
-
-def get_env_vars():
-    load_dotenv()
-    api_id = os.getenv("VICTOROPS_API_ID")
-    api_key = os.getenv("VICTOROPS_API_KEY")
-    org_id = os.getenv("VICTOROPS_ORG_ID")
-    if not all([api_id, api_key, org_id]):
-        raise Exception("Faltam variáveis de ambiente VICTOROPS_API_ID, VICTOROPS_API_KEY ou VICTOROPS_ORG_ID")
-    return api_id, api_key, org_id
-
-
-def get_headers(api_id, api_key, org_id):
-    return {
-        "X-VO-Api-Id": api_id,
-        "X-VO-Api-Key": api_key,
-        "X-VO-Org-Id": org_id,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
-
-def get_schedules(api_id, api_key, org_id):
-    url = f"{API_BASE}/org/{org_id}/schedules"
-    resp = requests.get(url, headers=get_headers(api_id, api_key, org_id))
-    resp.raise_for_status()
-    return resp.json().get("schedules", [])
-
-
-def get_schedule_details(api_id, api_key, org_id, schedule_id):
-    url = f"{API_BASE}/org/{org_id}/schedules/{schedule_id}"
-    resp = requests.get(url, headers=get_headers(api_id, api_key, org_id))
-    resp.raise_for_status()
-    return resp.json()
-
-
-
-
-    parser = argparse.ArgumentParser(description="Ajusta e exibe plantonistas VictorOps por competência.")
-    parser.add_argument("--ajustar", nargs=2, metavar=("COMPETENCIA", "NOME"), help="Ajusta o plantonista atual da competência")
-    args = parser.parse_args()
-
-    api_id, api_key, org_id = get_env_vars()
-    schedules = get_schedules(api_id, api_key, org_id)
-    spreadsheet_id, credentials_path = get_planilha_env()
-
-    for comp in COMPETENCIAS:
-        schedule = next((s for s in schedules if s["name"] == comp), None)
-        if not schedule:
-            print(f"[ERRO] Schedule não encontrado para: {comp}")
-            continue
-        details = get_schedule_details(api_id, api_key, org_id, schedule["id"])
-        print(f"\n=== {comp} ===")
-        # Buscar plantonista da semana atual na planilha
-        planilha_info = COMPETENCIA_PLANILHA_MAP[comp]
-        try:
-            plantonista_planilha = get_plantonista_atual(planilha_info["sheet"], planilha_info["col"], credentials_path, spreadsheet_id)
-            print(f"  [Planilha] Atual: {plantonista_planilha}")
-        except Exception as e:
-            print(f"  [Planilha] ERRO ao buscar: {e}")
-        # Exibir VictorOps
-        try:
-            rotations = details.get("rotations", [])
-            for rot in rotations:
-                participants = rot.get("participants", [])
-                if not participants:
-                    print("  [VictorOps] Nenhum participante encontrado.")
-                    continue
-                print(f"  [VictorOps] Rota: {rot.get('name', 'Sem nome')}")
-                print(f"    Atual: {participants[0].get('name', participants[0])}")
-                print("    Próximos:")
-                for i, p in enumerate(participants[1:5], 1):
-                    print(f"      {i}. {p.get('name', p)}")
-        except Exception as e:
-            print(f"  [VictorOps] Falha ao processar rota: {e}")
-
-    # TODO: Implementar ajuste de plantonista via PUT se --ajustar for usado
-    if args.ajustar:
-        print("\n[INFO] Ajuste de plantonista ainda não implementado neste esqueleto.")
-
-if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

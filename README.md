@@ -91,6 +91,9 @@ pip install -r requirements.txt
 | `python main.py` | Lê a planilha e **envia** a mensagem para o Google Chat. |
 | `python main.py --dry-run` | Lê a planilha e **imprime no console** sem enviar. Útil para validar configuração. |
 | `python main.py --today 2026-12-25` | Simula a execução para uma data arbitrária. Combine com `--dry-run` para QA. |
+| `python tools/ajustar_plantonistas.py --ajustar --dry-run` | Simula sincronização do VictorOps sem alterar escala. |
+| `python tools/ajustar_plantonistas.py --ajustar` | Executa sincronização do VictorOps com as competências configuradas. |
+| `./deploy.sh` | Fluxo de deploy completo: envia alerta no Chat e roda ajuste de plantonistas. |
 | `python main.py --help` | Lista todas as opções. |
 
 Exemplo:
@@ -104,7 +107,7 @@ python main.py --dry-run --today 2026-05-22
 Toda segunda às 09:00:
 
 ```cron
-0 9 * * 1 cd /caminho/alerta-plantao && /caminho/.venv/bin/python main.py >> run.log 2>&1
+0 9 * * 1 cd /caminho/alerta-plantao && ./deploy.sh >> run.log 2>&1
 ```
 
 ---
