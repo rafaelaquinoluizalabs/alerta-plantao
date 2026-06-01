@@ -114,11 +114,38 @@ def get_users(api_id: str, api_key: str, org_id: str) -> List[dict]:
     return resp.json().get("users", [])
 
 
+def get_all_teams(api_id: str, api_key: str, org_id: str) -> List[dict]:
+    """Lista todos os times do VictorOps (com ``slug`` e ``name``)."""
+    url = f"{API_BASE}/team"
+    resp = requests.get(
+        url,
+        headers=get_headers(api_id, api_key, org_id),
+        timeout=HTTP_TIMEOUT,
+        verify=get_tls_verify(),
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, list) else data.get("teams", [])
+
+
+def build_name_to_slug(teams: List[dict]) -> Dict[str, str]:
+    """Monta um mapa nome-do-time -> slug (case-insensitive)."""
+    mapping: Dict[str, str] = {}
+    for team in teams:
+        if not isinstance(team, dict):
+            continue
+        name = team.get("name")
+        slug = team.get("slug")
+        if name and slug:
+            mapping[name.strip().lower()] = slug
+    return mapping
+
+
 def get_team_oncall_schedule(
-    api_id: str, api_key: str, org_id: str, team: str
+    api_id: str, api_key: str, org_id: str, team_slug: str
 ) -> dict:
-    """Busca a escala de plantão (on-call) de um time."""
-    url = f"{API_BASE}/team/{team}/oncall/schedule"
+    """Busca a escala de plantão (on-call) de um time pelo seu ``slug``."""
+    url = f"{API_BASE}/team/{team_slug}/oncall/schedule"
     resp = requests.get(
         url,
         headers=get_headers(api_id, api_key, org_id),
@@ -127,6 +154,16 @@ def get_team_oncall_schedule(
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def get_current_oncall(schedule: dict) -> List[str]:
+    """Extrai os plantonistas atualmente em escala (campo ``onCall``)."""
+    oncall: List[str] = []
+    for entry in schedule.get("schedule", []):
+        user = entry.get("onCall")
+        if user and user not in oncall:
+            oncall.append(user)
+    return oncall
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -155,21 +192,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.error("%s", e)
         return 1
 
-    logger.info("Usuários VictorOps:")
     try:
-        for user in get_users(api_id, api_key, org_id):
-            username = user.get("username", user) if isinstance(user, dict) else user
-            logger.info("- %s", username)
+        name_to_slug = build_name_to_slug(get_all_teams(api_id, api_key, org_id))
     except requests.RequestException as e:
-        logger.error("Não foi possível listar usuários: %s", e)
+        logger.error("Não foi possível listar os times do VictorOps: %s", e)
+        return 1
 
     for team in get_teams():
-        logger.info("=== %s ===", team)
+        slug = name_to_slug.get(team.strip().lower(), team)
+        logger.info("=== %s (%s) ===", team, slug)
         try:
-            schedule = get_team_oncall_schedule(api_id, api_key, org_id, team)
-            logger.info("%s", schedule)
+            schedule = get_team_oncall_schedule(api_id, api_key, org_id, slug)
         except requests.RequestException as e:
             logger.error("Falha ao buscar escala do time '%s': %s", team, e)
+            continue
+        oncall = get_current_oncall(schedule)
+        if oncall:
+            logger.info("Plantonista(s) atual(is): %s", ", ".join(oncall))
+        else:
+            logger.info("Nenhum plantonista em escala.")
 
     if args.ajustar and not args.dry_run:
         logger.warning(
