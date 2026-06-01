@@ -155,6 +155,32 @@ class PlantaoExtractor:
         self._today = today or date.today()
 
     # -------- API pública --------
+    def next_week_by_competency(
+        self, competencia_map: Dict[str, Dict[str, object]]
+    ) -> Dict[str, str]:
+        """
+        Retorna, para cada competência do ``competencia_map``, o nome do
+        plantonista da **próxima** semana (linha seguinte à semana corrente
+        na planilha), usando a coluna definida em ``info['col']``.
+        """
+        all_values: List[List[str]] = self._ws.get_all_values()
+        week_row_idx = self._find_current_week_row(all_values)
+        if week_row_idx is None:
+            raise LookupError(
+                f"Não foi possível localizar o dia {self._today.day:02d}/"
+                f"{self._today.month:02d} ({MONTH_NAMES_PT[self._today.month]}) "
+                f"nas colunas C-I da aba '{self._ws.title}'."
+            )
+        next_row = (
+            all_values[week_row_idx + 1]
+            if week_row_idx + 1 < len(all_values)
+            else []
+        )
+        return {
+            comp: self._cell(next_row, int(info["col"]))
+            for comp, info in competencia_map.items()
+        }
+
     def extract(self) -> Plantonistas:
         all_values: List[List[str]] = self._ws.get_all_values()
         week_row_idx = self._find_current_week_row(all_values)
