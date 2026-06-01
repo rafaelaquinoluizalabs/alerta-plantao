@@ -45,6 +45,45 @@ cp .env.example .env
 
 > ⚠️ **Nunca** versione `.env` ou `credentials.json` — ambos já estão no `.gitignore`.
 
+## Problema com a versão do python 
+
+1. Instale as dependências de compilação do Ubuntu:
+
+sudo apt update; sudo apt install make build-essential libssl-dev zlib1g-dev \
+libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
+libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev -y
+
+
+2. Instale o pyenv:
+
+curl https://pyenv.run | bash
+
+3. Adicione o pyenv ao seu terminal (copie e cole todo este bloco de uma vez):
+
+echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
+echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
+echo 'eval "$(pyenv init -)"' >> ~/.bashrc
+echo 'eval "$(pyenv virtualenv-init -)"' >> ~/.bashrc
+source ~/.bashrc
+
+4. Instale o Python 3.14 e configure no seu projeto:
+
+# Isso pode demorar alguns minutos pois ele vai compilar o Python do zero
+pyenv install 3.14.0 
+
+# Entre na pasta do projeto
+cd ~/alerta-plantao
+
+# Define o 3.14 como a versão local dessa pasta
+pyenv local 3.14.0
+
+# Agora crie o ambiente virtual normalmente
+python -m venv .venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+
 ## Uso
 
 | Comando | O que faz |
