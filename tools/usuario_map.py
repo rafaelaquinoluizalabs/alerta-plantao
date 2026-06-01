@@ -19,9 +19,8 @@ from typing import Dict, Optional
 NOME_VICTOROPS_MAP: Dict[str, str] = {
     "Nery": "neryresende",
     "Emerson": "emerson.forster",
-    # Confirme os usernames abaixo (não há correspondência exata no VictorOps):
-    # "Thiago Medeiros": "???",   # candidatos: thiago.reis, thia_freitas
-    # "PC": "???",
+    "Thiago Medeiros": "thiago.reis",
+    "PC": "paulo.cferreira",
     # Demais plantonistas que aparecem na planilha ao longo das semanas:
     # "Rafael Aquino": "raf_aquino",
     # "André": "andre.ferreira",
